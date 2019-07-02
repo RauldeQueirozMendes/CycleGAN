@@ -3,8 +3,6 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Do other imports now...
 # os.environ["TF_CPP_MIN_LOG_LEVEL"]="2"
 
-print("oi")
-
 import scipy
 import os
 import cv2
@@ -579,15 +577,6 @@ else:
     except OSError:
         raise SystemExit
 
-# imgs_A = load_and_scale_image(train_images[0])
-# imgs_B = load_and_scale_depth(train_labels[0])
-
-# imgs_A, imgs_B = np.array(imgs_A), np.array(imgs_B)
-
-# print(imgs_A.shape)
-
-# print(imgs_B.shape)
-
 def sample_images():
     r,c = 2,3
 
@@ -644,15 +633,18 @@ def sample_images():
     plt.pause(60.0)
     plt.close('all')
 
-batch_start = 0
-batch_end = batch_size
-
 numSamples = len(train_images)
 
 for epoch in range(epochs):
+    batch_start = 0
+    batch_end = batch_size
     for batch in tqdm(range((len(train_images)//batch_size)+1)):
 
         limit = min(batch_end,numSamples)
+
+        if (limit > numSamples):
+            limit = numSamples
+            batch_start = numSamples - 4
 
         imgs_A = np.concatenate(list(map(load_and_scale_image,train_images[batch_start:limit])),0)
         imgs_B = np.concatenate(list(map(load_and_scale_depth,train_labels[batch_start:limit])),0)
@@ -660,8 +652,8 @@ for epoch in range(epochs):
         # print(imgs_A.shape)
         # print(imgs_B.shape)
 
-        batch_start += 1
-        batch_end += 1
+        batch_start += batch_size
+        batch_end += batch_size
 
         # ----------------------
         #  Train Discriminators
@@ -710,4 +702,4 @@ for epoch in range(epochs):
         d_A.save_weights('d_A_weights.h5')
         d_B.save_weights('d_B_weights.h5')
         combined.save_weights('combined_weights.h5')
-        sample_images()
+        # sample_images()
