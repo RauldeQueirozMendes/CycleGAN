@@ -640,7 +640,7 @@ for epoch in range(epochs):
     batch_end = batch_size
     for batch in tqdm(range((len(train_images)//batch_size)+1)):
 
-        limit = min(batch_end,numSamples)
+        limit = batch_end
 
         if (limit > numSamples):
             limit = numSamples
