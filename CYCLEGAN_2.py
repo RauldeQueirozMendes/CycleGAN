@@ -3,6 +3,7 @@ import os
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"  # Do other imports now...
 # os.environ["TF_CPP_MIN_LOG_LEVEL"]="2"
 
+print("oi")
 
 import scipy
 import os
