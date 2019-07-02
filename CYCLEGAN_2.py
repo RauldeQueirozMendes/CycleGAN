@@ -22,9 +22,11 @@ from scipy.interpolate import LinearNDInterpolator
 import datetime
 import matplotlib.pyplot as plt
 import sys
+import random
 import numpy as np
 import tensorflow as tf
-from keras_preprocessing.image import apply_brightness_shift,apply_channel_shift,img_to_array,load_img,apply_affine_transform
+import itertools
+from keras_preprocessing.image import apply_brightness_shift,apply_channel_shift,img_to_array,load_img,apply_affine_transform,flip_axis
 from keras.backend.tensorflow_backend import set_session
 from tqdm import tqdm
 config = tf.ConfigProto()
@@ -412,17 +414,26 @@ epochs=100000
 
 sample_interval=1
 
-def load_and_scale_image(filepath):
-    image_input = img_to_array(load_img(filepath, target_size=(img_rows,img_cols), interpolation='lanczos'))
+def load_and_scale_image(filepath,random_index):
+    image_input = img_to_array(load_img(filepath, target_size=(128,416), interpolation='lanczos'))
+    if random_index[2] == 1:
+        image_input = flip_axis(image_input,axis=1)
+    if random_index[1] == 1:
+        image_input = apply_brightness_shift(image_input,random_index[0])
+    if random_index[3] == 1:
+        image_input = flip_axis(image_input,axis=2)
     image_input = image_input.astype(np.float32)
     image_input = np.expand_dims(image_input,axis=0)
     return image_input/255.0
 
-def load_and_scale_depth(filepath):
-    image_input = img_to_array(load_img(filepath, grayscale=True, color_mode='grayscale', target_size=(img_rows,img_cols), interpolation='lanczos'))/3.0
-    image_input = image_input.astype(np.float32)
-    image_input = np.expand_dims(image_input,axis=0)
-    return image_input/90.0
+
+def load_and_scale_depth(filepath,random_index):
+    depth_gt = img_to_array(load_img(filepath, grayscale=True, color_mode='grayscale', target_size=(128,416), interpolation='lanczos'))/3.0
+    if random_index[2] == 1:
+        depth_gt = flip_axis(depth_gt,axis=1)
+    depth_gt = depth_gt.astype(np.float32)
+    depth_gt = np.expand_dims(depth_gt,axis=0)
+    return depth_gt/90.0    #TODO: Change it to 90.0 and see the sigmoid x limits before saturation
 
 
 if not (os.path.exists('kitti_continuous_train (2).txt') and os.path.exists('kitti_continuous_test (2).txt')):
@@ -646,8 +657,15 @@ for epoch in range(epochs):
             limit = numSamples
             batch_start = numSamples - 4
 
-        imgs_A = np.concatenate(list(map(load_and_scale_image,train_images[batch_start:limit])),0)
-        imgs_B = np.concatenate(list(map(load_and_scale_depth,train_labels[batch_start:limit])),0)
+        c = random.uniform(0.8,1.2)
+        c_rand = random.randint(0,1)
+        f_rand = random.randint(0,1)
+        ch_rand = random.randint(0,1)
+
+        random_index = [c,c_rand,f_rand,ch_rand]
+
+        imgs_A = np.concatenate(list(map(load_and_scale_image,train_images[batch_start:limit],itertools.repeat(random_index,len(train_images[batch_start:limit])))),0)
+        imgs_B = np.concatenate(list(map(load_and_scale_depth,train_labels[batch_start:limit],itertools.repeat(random_index,len(train_labels[batch_start:limit])))),0)
 
         # print(imgs_A.shape)
         # print(imgs_B.shape)
