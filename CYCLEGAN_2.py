@@ -22,11 +22,9 @@ from scipy.interpolate import LinearNDInterpolator
 import datetime
 import matplotlib.pyplot as plt
 import sys
-import random
 import numpy as np
 import tensorflow as tf
-import itertools
-from keras_preprocessing.image import apply_brightness_shift,apply_channel_shift,img_to_array,load_img,apply_affine_transform,flip_axis
+from keras_preprocessing.image import apply_brightness_shift,apply_channel_shift,img_to_array,load_img,apply_affine_transform
 from keras.backend.tensorflow_backend import set_session
 from tqdm import tqdm
 config = tf.ConfigProto()
@@ -34,6 +32,8 @@ config.gpu_options.allow_growth = True  # dynamically grow the memory used on th
 config.log_device_placement = True  # to log device placement (on which device the operation ran)
 sess = tf.Session(config=config)
 set_session(sess)  # set this TensorFlow session as the default
+
+tf.logging.set_verbosity(tf.logging.ERROR) #TODO: comment this line
 
 plt.ion()
 
@@ -169,7 +169,15 @@ def build_discriminator_A():
     # Number of filters in the first layer of G and D
     df = 64
 
-    def d_layer(layer_input,filters,f_size=4,normalization=True):
+    def d_layer0(layer_input,filters,f_size=3,normalization=True):
+        """Discriminator layer"""
+        d = tf.keras.layers.Conv2D(filters,kernel_size=f_size,strides=1,padding='same')(layer_input)
+        d = tf.keras.layers.ReLU()(d)
+        if normalization:
+            d = tf.keras.layers.BatchNormalization()(d)
+        return d
+
+    def d_layer(layer_input,filters,f_size=3,normalization=True):
         """Discriminator layer"""
         d = tf.keras.layers.Conv2D(filters,kernel_size=f_size,strides=2,padding='same')(layer_input)
         d = tf.keras.layers.ReLU()(d)
@@ -179,13 +187,13 @@ def build_discriminator_A():
 
     img = tf.keras.Input(shape=img_shape)
 
-    d1 = d_layer(img,df,normalization=False)
+    d1 = d_layer0(img,df)
     d2 = d_layer(d1,df * 2)
     d3 = d_layer(d2,df * 4)
     d4 = d_layer(d3,df * 8)
     d5 = d_layer(d4,df * 16)
 
-    validity = tf.keras.layers.Conv2D(1,kernel_size=4,strides=1,padding='same')(d5)
+    validity = tf.keras.layers.Conv2D(1,kernel_size=3,strides=1,padding='same')(d5)
 
     return tf.keras.Model(img,validity)
 
@@ -194,7 +202,15 @@ def build_discriminator_B():
     # Number of filters in the first layer of G and D
     df = 64
 
-    def d_layer(layer_input,filters,f_size=4,normalization=True):
+    def d_layer0(layer_input,filters,f_size=3,normalization=True):
+        """Discriminator layer"""
+        d = tf.keras.layers.Conv2D(filters,kernel_size=f_size,strides=1,padding='same')(layer_input)
+        d = tf.keras.layers.ReLU()(d)
+        if normalization:
+            d = tf.keras.layers.BatchNormalization()(d)
+        return d
+
+    def d_layer(layer_input,filters,f_size=3,normalization=True):
         """Discriminator layer"""
         d = tf.keras.layers.Conv2D(filters,kernel_size=f_size,strides=2,padding='same')(layer_input)
         d = tf.keras.layers.ReLU()(d)
@@ -204,13 +220,13 @@ def build_discriminator_B():
 
     img = tf.keras.Input(shape=depth_shape)
 
-    d1 = d_layer(img,df,normalization=False)
+    d1 = d_layer0(img,df)
     d2 = d_layer(d1,df * 2)
     d3 = d_layer(d2,df * 4)
     d4 = d_layer(d3,df * 8)
     d5 = d_layer(d4,df * 16)
 
-    validity = tf.keras.layers.Conv2D(1,kernel_size=4,strides=1,padding='same')(d5)
+    validity = tf.keras.layers.Conv2D(1,kernel_size=3,strides=1,padding='same')(d5)
 
     return tf.keras.Model(img,validity)
 
@@ -224,15 +240,15 @@ img_shape = (img_rows,img_cols,channels)
 depth_shape = (img_rows,img_cols,channels_depth)
 
 # Calculate output shape of D (PatchGAN)
-patch = int(img_rows / 2 ** 5)
-patch2 = int(img_cols / 2 ** 5)
+patch = int(img_rows / 2 ** 4)
+patch2 = int(img_cols / 2 ** 4)
 disc_patch = (patch,patch2,1)
 
 # Loss weights
 lambda_cycle = 10.0  # Cycle-consistency loss
 # lambda_id = 0.1 * lambda_cycle  # Identity loss
 
-optimizer = tf.keras.optimizers.Adam(0.0001,0.5)
+optimizer = tf.keras.optimizers.Nadam(0.0001)
 
 # Build and compile the discriminators
 d_A = build_discriminator_A()
@@ -332,10 +348,10 @@ def tf_berhu_loss(y_true, y_pred):
     return tf_loss
 
 
-d_A.compile(loss=tf_berhu_loss,
+d_A.compile(loss=tf_mse_loss,
                  optimizer=optimizer,
                  metrics=['accuracy'])
-d_B.compile(loss=tf_berhu_loss,
+d_B.compile(loss=tf_mse_loss,
                  optimizer=optimizer,
                  metrics=['accuracy'])
 
@@ -395,7 +411,7 @@ combined.summary()
 
 #--------------------------------------------------
 
-combined.compile(loss=[tf_berhu_loss,tf_berhu_loss,tf_mae_loss,tf_mae_loss],
+combined.compile(loss=[tf_mse_loss,tf_mse_loss,tf_mae_loss,tf_mae_loss],
                 loss_weights=[1,1,lambda_cycle,lambda_cycle],
                 optimizer=optimizer)
 
@@ -414,26 +430,17 @@ epochs=100000
 
 sample_interval=1
 
-def load_and_scale_image(filepath,random_index):
-    image_input = img_to_array(load_img(filepath, target_size=(128,416), interpolation='lanczos'))
-    if random_index[2] == 1:
-        image_input = flip_axis(image_input,axis=1)
-    if random_index[1] == 1:
-        image_input = apply_brightness_shift(image_input,random_index[0])
-    if random_index[3] == 1:
-        image_input = flip_axis(image_input,axis=2)
+def load_and_scale_image(filepath):
+    image_input = img_to_array(load_img(filepath, target_size=(img_rows,img_cols), interpolation='lanczos'))
     image_input = image_input.astype(np.float32)
     image_input = np.expand_dims(image_input,axis=0)
     return image_input/255.0
 
-
-def load_and_scale_depth(filepath,random_index):
-    depth_gt = img_to_array(load_img(filepath, grayscale=True, color_mode='grayscale', target_size=(128,416), interpolation='lanczos'))/3.0
-    if random_index[2] == 1:
-        depth_gt = flip_axis(depth_gt,axis=1)
-    depth_gt = depth_gt.astype(np.float32)
-    depth_gt = np.expand_dims(depth_gt,axis=0)
-    return depth_gt/90.0    #TODO: Change it to 90.0 and see the sigmoid x limits before saturation
+def load_and_scale_depth(filepath):
+    image_input = img_to_array(load_img(filepath, grayscale=True, color_mode='grayscale', target_size=(img_rows,img_cols), interpolation='lanczos'))/3.0
+    image_input = image_input.astype(np.float32)
+    image_input = np.expand_dims(image_input,axis=0)
+    return image_input/90.0
 
 
 if not (os.path.exists('kitti_continuous_train (2).txt') and os.path.exists('kitti_continuous_test (2).txt')):
@@ -655,17 +662,10 @@ for epoch in range(epochs):
 
         if (limit > numSamples):
             limit = numSamples
-            batch_start = numSamples - 4
+            batch_start = numSamples - batch_size
 
-        c = random.uniform(0.8,1.2)
-        c_rand = random.randint(0,1)
-        f_rand = random.randint(0,1)
-        ch_rand = random.randint(0,1)
-
-        random_index = [c,c_rand,f_rand,ch_rand]
-
-        imgs_A = np.concatenate(list(map(load_and_scale_image,train_images[batch_start:limit],itertools.repeat(random_index,len(train_images[batch_start:limit])))),0)
-        imgs_B = np.concatenate(list(map(load_and_scale_depth,train_labels[batch_start:limit],itertools.repeat(random_index,len(train_labels[batch_start:limit])))),0)
+        imgs_A = np.concatenate(list(map(load_and_scale_image,train_images[batch_start:limit])),0)
+        imgs_B = np.concatenate(list(map(load_and_scale_depth,train_labels[batch_start:limit])),0)
 
         # print(imgs_A.shape)
         # print(imgs_B.shape)
